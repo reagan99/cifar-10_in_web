@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CIFAR-10 그림 예측</title>
+    <style>
+        canvas {
+            border: 1px solid #000;
+            cursor: crosshair;
+            background-color: #fff;
+        }
+    </style>
+</head>
+
+<body>
+    <h1 class="text-center">CIFAR-10 그림 예측</h1>
+    <div class="container mt-5">
+        <div class="row justify-content-center">
+            <div class="col-12 col-md-6">
+                <canvas id="drawingCanvas" width="512" height="512"></canvas>
+                <button id="clearButton">지우기</button>
+                <input type="color" id="colorPicker" value="#000000">
+                <button id="eraserButton">지우개 모드</button>
+                <button id="predictButton">예측</button>
+                <div id="predictionResult"></div>
+                <div id="loadingMessage" style="display: none;">예측 중 입니다...</div>
+            </div>
+        </div>
+    </div>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        var canvas = document.getElementById("drawingCanvas");
+        var ctx = canvas.getContext("2d");
+        var drawing = false;
+        var eraserMode = false;
+        var colorPicker = document.getElementById("colorPicker");
+        var eraserButton = document.getElementById("eraserButton");
+
+        canvas.addEventListener("mousedown", function (e) {
+            drawing = true;
+            ctx.lineWidth = 5;
+            ctx.lineCap = "round";
+            if (eraserMode) {
+                ctx.strokeStyle = "#fff";
+            } else {
+                ctx.strokeStyle = colorPicker.value;
+            }
+            ctx.beginPath();
+            var x = e.clientX - canvas.getBoundingClientRect().left;
+            var y = e.clientY - canvas.getBoundingClientRect().top;
+            ctx.moveTo(x, y);
+        });
+
+        canvas.addEventListener("mousemove", function (e) {
+            if (!drawing) return;
+            var x = e.clientX - canvas.getBoundingClientRect().left;
+            var y = e.clientY - canvas.getBoundingClientRect().top;
+            ctx.lineTo(x, y);
+            ctx.stroke();
+        });
+
+        canvas.addEventListener("mouseup", function (e) {
+            drawing = false;
+        });
+
+        canvas.addEventListener("mouseleave", function (e) {
+            drawing = false;
+        });
+
+        function getTouchPos(canvasDom, touchEvent) {
+            var rect = canvasDom.getBoundingClientRect();
+            return {
+                x: touchEvent.touches[0].clientX - rect.left,
+                y: touchEvent.touches[0].clientY - rect.top
+            };
+        }
+
+        canvas.addEventListener("touchstart", function (e) {
+            e.preventDefault();
+            var touchPos = getTouchPos(canvas, e);
+            drawing = true;
+            ctx.lineWidth = 5;
+            ctx.lineCap = "round";
+            if (eraserMode) {
+                ctx.strokeStyle = "#fff";
+            } else {
+                ctx.strokeStyle = colorPicker.value;
+            }
+            ctx.beginPath();
+            ctx.moveTo(touchPos.x, touchPos.y);
+        });
+
+        canvas.addEventListener("touchmove", function (e) {
+            e.preventDefault();
+            if (!drawing) return;
+            var touchPos = getTouchPos(canvas, e);
+            ctx.lineTo(touchPos.x, touchPos.y);
+            ctx.stroke();
+        });
+
+        canvas.addEventListener("touchend", function (e) {
+            e.preventDefault();
+            drawing = false;
+        });
+
+        canvas.addEventListener("touchcancel", function (e) {
+            e.preventDefault();
+            drawing = false;
+        });
+
+        var clearButton = document.getElementById("clearButton");
+        clearButton.addEventListener("click", function () {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        });
+
+        colorPicker.addEventListener("change", function () {
+            if (!eraserMode) {
+                ctx.strokeStyle = colorPicker.value;
+            }
+        });
+
+        eraserButton.addEventListener("click", function () {
+            eraserMode = !eraserMode;
+            if (eraserMode) {
+                ctx.strokeStyle = "#fff";
+            } else {
+                ctx.strokeStyle = colorPicker.value;
+            }
+        });
+
+        function handlePaste(e) {
+            var items = e.clipboardData.items;
+            for (var i = 0; i < items.length; i++) {
+                if (items[i].type.indexOf("image") !== -1) {
+                    var blob = items[i].getAsFile();
+                    var img = new Image();
+                    img.src = URL.createObjectURL(blob);
+                    img.onload = function () {
+                        ctx.drawImage(img, 0, 0);
+                    };
+                }
+            }
+        }
+
+        document.addEventListener("paste", handlePaste);
+
+        var predictButton = document.getElementById("predictButton");
+        var predictionResult = document.getElementById("predictionResult");
+        var loadingMessage = document.getElementById("loadingMessage");
+
+        predictButton.addEventListener("click", function () {
+            if (isDrawing()) {
+                loadingMessage.style.display = "block";
+                var canvasData = canvas.toDataURL("image/png");
+                var requestData = JSON.stringify({ image: canvasData });
+
+                $.ajax({
+                    type: "POST",
+                    url: "/predict/",
+                    data: requestData,
+                    contentType: "application/json",
+                    success: function (response) {
+                        var resultHTML = "<p>예측 결과:</p><ul>";
+                        for (var i = 0; i < response.length; i++) {
+                            resultHTML += "<li>" + (i + 1) + '. ' + response[i].class_name + " (확률: " + (response[i].probability * 100).toFixed(2) + "%)</li>";
+                        }
+                        resultHTML += "</ul>";
+                        predictionResult.innerHTML = resultHTML;
+                        loadingMessage.style.display = "none";
+                    },
+                    error: function () {
+                        predictionResult.textContent = "예측 요청 실패";
+                        loadingMessage.style.display = "none";
+                    },
+                });
+            } else {
+                predictionResult.textContent = "예측 결과: (그림을 그리고 다시 시도하세요)";
+            }
+        });
+
+
+
+        function isDrawing() {
+            var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            for (var i = 0; i < imageData.length; i += 4) {
+                if (imageData[i + 3] !== 0) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    </script>
+</body>
+
+</html>
