@@ -68,7 +68,7 @@ model = CNN(dropout=0.5)
 device = torch.device("cpu")
 model = model.to(device)
 
-# 모델 가중치 불러오기 (주의: 반드시 모델 이후에 해야 합니다.)
+# 모델 가중치 불러오기 
 model.load_state_dict(torch.load('cifar-10.pth', map_location=device))
 
 # 모델을 평가 모드로 설정
@@ -82,11 +82,6 @@ transform = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
 ])
-
-# 나머지 코드는 이전과 동일합니다.
-
-# 이미지 전처리를 위한 변환
-
 
 @app.get("/")
 async def read_root(request: Request):
